@@ -176,16 +176,6 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold tracking-tight">Financial Reports</h2>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={handleExport} disabled={isExporting || isLoading || payments.length === 0}>
-             {isExporting ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
-             Export CSV
-          </Button>
-        </div>
       </div>
 
       {/* Filters */}
@@ -223,11 +213,23 @@ export default function ReportsPage() {
 
       {/* Payment Report Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Payment Report</CardTitle>
-          <CardDescription>
-            {payments ? `${payments.length} records found (Source: Dashboard)` : 'Loading...'}
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="space-y-1">
+            <CardTitle>Payment Report</CardTitle>
+            <CardDescription>
+              {payments ? `${payments.length} records found (Source: Dashboard)` : 'Loading...'}
+            </CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting || isLoading || payments.length === 0}>
+               {isExporting ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
+               Export CSV
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (

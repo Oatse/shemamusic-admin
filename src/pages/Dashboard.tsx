@@ -1,7 +1,7 @@
 import { useDashboard, useBookings, useUsers, useCourses } from '@/hooks/useQueries';
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Users, BookOpen, Calendar, DollarSign, ArrowUpRight, Activity, Plus, ArrowRight } from 'lucide-react';
+import { Users, BookOpen, Calendar, DollarSign, Activity, Plus, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { DashboardSkeleton } from '@/components/DashboardSkeleton';
@@ -142,10 +142,7 @@ export default function Dashboard() {
             <Calendar className="h-4 w-4" />
             {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
           </Button>
-          <Button className="gap-2">
-            <ArrowUpRight className="h-4 w-4" />
-            Generate Report
-          </Button>
+
         </div>
       </div>
 
