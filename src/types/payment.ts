@@ -1,5 +1,5 @@
 export type PaymentStatus = 'pending' | 'success' | 'failed' | 'refunded';
-export type PaymentMethod = 'cash' | 'BCA' | 'Initial Booking';
+export type PaymentMethod = 'cash' | 'BCA' | 'Initial Booking' | 'transfer' | 'virtual_account';
 export type PaymentType = 'monthly' | 'registration' | 'other';
 
 export interface Payment {
