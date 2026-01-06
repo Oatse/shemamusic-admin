@@ -171,7 +171,7 @@ export default function StudentsPage() {
   const [limit, setLimit] = useState(10);
   const { data: bookingsData, isLoading: isBookingsLoading, error: bookingsError } = useBookings(1, 1000); // Fetch all bookings
   const { data: usersData } = useUsers();
-  const { data: studentDetail, isLoading: isStudentDetailLoading } = useStudent(selectedStudent?.id);
+  const { data: studentDetail } = useStudent(selectedStudent?.id);
 
   // Maps for table display
   const fullStudentMap = useMemo(() => {

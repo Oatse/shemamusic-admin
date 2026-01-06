@@ -46,7 +46,7 @@ export default function Dashboard() {
 
   const recentActivity: RecentActivityItem[] = useMemo(() => {
     if (!bookingsData) return [];
-    const bookings = Array.isArray(bookingsData) ? bookingsData : (bookingsData.bookings || []);
+    const bookings = Array.isArray(bookingsData) ? bookingsData : (bookingsData?.data || []);
     
     return bookings
       .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

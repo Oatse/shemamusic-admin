@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/services/api';
-import { supabase } from '@/lib/supabase';
+
 import { useAllBookings, useStudents, useCourses, useInstructors } from '@/hooks/useQueries';
 import {
   Table,

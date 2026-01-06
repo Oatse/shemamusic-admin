@@ -82,7 +82,7 @@ export default function BookingsPage() {
   const qInstructorId = prefInstructorId;
   const qCourseId = prefInstructorId ? undefined : selectedBooking?.course_id;
 
-  const { data: availabilityData, isLoading: isLoadingSlots } = useAvailabilitySlots(qCourseId, qInstructorId);
+  const { data: availabilityData } = useAvailabilitySlots(qCourseId, qInstructorId);
 
   // Build lookup maps from query data
   const studentMap = useMemo(() => {
@@ -342,7 +342,7 @@ export default function BookingsPage() {
   const handleAssignSlot = () => {
     if (selectedBooking && selectedSlot) {
       // Find the selected slot to get schedule_id
-      const slot = slots.find(s => s.id === selectedSlot);
+      const slot = slots.find((s: any) => s.id === selectedSlot);
       if (slot && slot.schedule_id) {
         assignSlotMutation.mutate({ 
           bookingId: selectedBooking.id, 
@@ -358,7 +358,7 @@ export default function BookingsPage() {
     }
   };
 
-  const findScheduleIdFromPreference = (booking: any, preference: any) => {
+  const findScheduleIdFromPreference = (preference: any) => {
     if (!preference || !availabilityData?.slots) return null;
     
     const normalizeTime = (time: string | undefined | null) => {
@@ -395,7 +395,7 @@ export default function BookingsPage() {
        const pref = booking.slot_preferences[index];
        if (pref.slot_id || pref.id) return pref.slot_id || pref.id;
        // Try matching value
-       const foundId = findScheduleIdFromPreference(booking, pref);
+       const foundId = findScheduleIdFromPreference(pref);
        if (foundId) return foundId;
     }
 
@@ -407,7 +407,7 @@ export default function BookingsPage() {
            return pref.id || pref.slot_id || pref.schedule_id;
        }
        // Fallback: match by values (day, start_time)
-       const foundId = findScheduleIdFromPreference(booking, pref);
+       const foundId = findScheduleIdFromPreference(pref);
        if (foundId) return foundId;
     }
 
@@ -779,7 +779,7 @@ export default function BookingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {slots.length > 0 ? (
-                    slots.map((slot) => {
+                    slots.map((slot: any) => {
                       const current = slot.current_enrollments || 0;
                       const max = slot.max_students || 0;
                       const isFull = max > 0 && current >= max;

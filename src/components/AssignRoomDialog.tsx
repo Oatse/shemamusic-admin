@@ -146,7 +146,7 @@ export function AssignRoomDialog({ courseId, courseTitle, trigger }: AssignRoomD
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {rooms.map((room: any) => (
+                      {(Array.isArray(rooms) ? rooms : (rooms as any)?.data || []).map((room: any) => (
                         <SelectItem key={room.id} value={room.id}>
                           {room.name} ({room.capacity})
                         </SelectItem>

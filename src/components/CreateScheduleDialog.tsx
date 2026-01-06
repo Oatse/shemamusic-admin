@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { Plus, Trash } from "lucide-react";
-import { TimePicker } from "@/components/ui/time-picker";
+
 
 const scheduleSchema = z.object({
   course_id: z.string().min(1, "Course is required"),
@@ -119,7 +119,7 @@ export function CreateScheduleDialog({ courseId, courseTitle, trigger }: CreateS
 
   const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-  const timeOptions = [];
+  const timeOptions: string[] = [];
   for (let i = 0; i < 24; i++) {
     const hour = i.toString().padStart(2, '0');
     timeOptions.push(`${hour}:00`);

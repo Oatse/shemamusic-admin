@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
-import { Plus, Edit, Trash, Eye, Upload, X, Loader2, Mail, Phone, MessageCircle, Calendar, Award } from 'lucide-react';
+import { Plus, Edit, Trash, Eye, Upload, X, Loader2 } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
