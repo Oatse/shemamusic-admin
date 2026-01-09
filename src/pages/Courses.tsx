@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
-import { useCourses, useInstructors, queryKeys } from '@/hooks/useQueries';
-import { CreateScheduleDialog } from "@/components/CreateScheduleDialog";
-import { AssignRoomDialog } from "@/components/AssignRoomDialog";
+import { useCourses, queryKeys } from '@/hooks/useQueries';
 import { CreateCourseDialog } from "@/components/CreateCourseDialog";
 import {
   Table,
@@ -55,12 +53,11 @@ const updateCourseSchema = z.object({
   description: z.string().optional(),
   instrument: z.string().min(1, "Instrument is required"),
   level: z.string().min(1, "Level is required"),
-  duration_weeks: z.coerce.number().min(1),
-  sessions_per_week: z.coerce.number().min(1),
-  price: z.coerce.number().min(0),
-  instructor_id: z.string().optional(),
+  duration_minutes: z.coerce.number().min(1),
+  price_per_session: z.coerce.number().min(0),
   max_students: z.coerce.number().min(1),
   is_active: z.boolean(),
+  type_course: z.enum(["reguler", "hobby", "karyawan", "ministry", "privat"]),
 });
 
 type UpdateCourseFormValues = z.infer<typeof updateCourseSchema>;
@@ -76,7 +73,6 @@ export default function CoursesPage() {
   const [limit, setLimit] = useState(10);
   
   const { data: coursesData, isLoading, error } = useCourses(page, limit);
-  const { data: instructorsData } = useInstructors(1, 1000);
 
   const editForm = useForm<UpdateCourseFormValues>({
     resolver: zodResolver(updateCourseSchema),
@@ -85,12 +81,11 @@ export default function CoursesPage() {
       description: "",
       instrument: "",
       level: "Beginner",
-      duration_weeks: 4,
-      sessions_per_week: 1,
-      price: 0,
-      instructor_id: "",
+      duration_minutes: 0,
+      price_per_session: 0,
       max_students: 1,
       is_active: true,
+      type_course: "privat",
     },
   });
 
@@ -102,12 +97,11 @@ export default function CoursesPage() {
         description: selectedCourse.description || "",
         instrument: selectedCourse.instrument || "",
         level: selectedCourse.level || "Beginner",
-        duration_weeks: selectedCourse.duration_weeks || 4,
-        sessions_per_week: selectedCourse.sessions_per_week || 1,
-        price: selectedCourse.price || selectedCourse.price_per_session || 0,
-        instructor_id: selectedCourse.instructor_id || "",
+        duration_minutes: selectedCourse.duration_minutes || 0,
+        price_per_session: selectedCourse.price_per_session || selectedCourse.price || 0,
         max_students: selectedCourse.max_students || 5,
         is_active: selectedCourse.is_active !== undefined ? selectedCourse.is_active : true,
+        type_course: selectedCourse.type_course || "privat",
       });
     }
   }, [selectedCourse, editForm]);
@@ -174,8 +168,6 @@ export default function CoursesPage() {
     }
   }
 
-  const instructors = instructorsData?.data || [];
-
   if (isLoading) return <TableSkeleton columnCount={7} rowCount={10} />;
   if (error) return <div>Error loading courses</div>;
 
@@ -196,6 +188,7 @@ export default function CoursesPage() {
               <TableHead>Title</TableHead>
 
               <TableHead>Instrument</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Level</TableHead>
               <TableHead>Status</TableHead>
 
@@ -208,6 +201,7 @@ export default function CoursesPage() {
                 <TableCell className="font-medium">{course.title}</TableCell>
 
                 <TableCell>{course.instrument || '-'}</TableCell>
+                <TableCell className="capitalize">{course.type_course || '-'}</TableCell>
                 <TableCell>{course.level}</TableCell>
                 <TableCell>
                   <Badge variant={course.is_active ? 'default' : 'secondary'}>
@@ -242,8 +236,6 @@ export default function CoursesPage() {
                     >
                       <Trash className="h-4 w-4" />
                     </Button>
-                    <CreateScheduleDialog courseId={course.id} courseTitle={course.title} />
-                    <AssignRoomDialog courseId={course.id} courseTitle={course.title} />
                   </div>
                 </TableCell>
               </TableRow>
@@ -274,16 +266,16 @@ export default function CoursesPage() {
                   <p className="text-sm font-semibold">{selectedCourse.title || '-'}</p>
                 </div>
                 <div>
+                  <label className="text-sm font-medium text-gray-500">Type</label>
+                  <p className="text-sm capitalize">{selectedCourse.type_course || '-'}</p>
+                </div>
+                <div>
                   <label className="text-sm font-medium text-gray-500">Status</label>
                   <p className="text-sm">
                     <Badge variant={selectedCourse.is_active ? 'default' : 'secondary'}>
                       {selectedCourse.is_active ? 'Active' : 'Inactive'}
                     </Badge>
                   </p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Instructor</label>
-                  <p className="text-sm">{selectedCourse.instructor_name || '-'}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Instrument</label>
@@ -298,24 +290,17 @@ export default function CoursesPage() {
                   <p className="text-sm">{selectedCourse.max_students || '-'}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Duration (Weeks)</label>
-                  <p className="text-sm">{selectedCourse.duration_weeks || '-'}</p>
+                  <label className="text-sm font-medium text-gray-500">Duration (Minutes)</label>
+                  <p className="text-sm">{selectedCourse.duration_minutes || '-'}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-500">Sessions/Week</label>
-                  <p className="text-sm">{selectedCourse.sessions_per_week || '-'}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Price</label>
+                  <label className="text-sm font-medium text-gray-500">Price per Session</label>
                   <p className="text-sm">
                     {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' })
-                      .format(selectedCourse.price || selectedCourse.price_per_session || 0)}
+                      .format(selectedCourse.price_per_session || selectedCourse.price || 0)}
                   </p>
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Total Students</label>
-                  <p className="text-sm">{selectedCourse.total_students || 0}</p>
-                </div>
+
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">Description</label>
@@ -416,33 +401,6 @@ export default function CoursesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={editForm.control}
-                  name="instructor_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Instructor</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select instructor" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {instructors.map((instructor: any) => (
-                            <SelectItem 
-                              key={instructor.user_id || instructor.id} 
-                              value={instructor.user_id || instructor.id}
-                            >
-                              {instructor.full_name || instructor.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={editForm.control}
                   name="max_students"
                   render={({ field }) => (
                     <FormItem>
@@ -455,13 +413,13 @@ export default function CoursesPage() {
                   )}
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={editForm.control}
-                  name="duration_weeks"
+                  name="duration_minutes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Duration (Weeks)</FormLabel>
+                      <FormLabel>Duration (Minutes)</FormLabel>
                       <FormControl>
                         <Input type="number" {...field} />
                       </FormControl>
@@ -471,23 +429,10 @@ export default function CoursesPage() {
                 />
                 <FormField
                   control={editForm.control}
-                  name="sessions_per_week"
+                  name="price_per_session"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Sessions/Week</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={editForm.control}
-                  name="price"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price</FormLabel>
+                      <FormLabel>Price per Session</FormLabel>
                       <FormControl>
                         <Input type="number" {...field} />
                       </FormControl>
@@ -514,6 +459,30 @@ export default function CoursesPage() {
                       <SelectContent>
                         <SelectItem value="true">Active</SelectItem>
                         <SelectItem value="false">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="type_course"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Course Type</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select course type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="reguler">Reguler</SelectItem>
+                        <SelectItem value="hobby">Hobby</SelectItem>
+                        <SelectItem value="karyawan">Karyawan</SelectItem>
+                        <SelectItem value="ministry">Ministry</SelectItem>
+                        <SelectItem value="privat">Privat</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

@@ -17,6 +17,7 @@ import {
   WifiOff,
   Banknote
 } from 'lucide-react';
+import shemaLogo from '@/assets/shemalogo.png';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 import api from '@/services/api';
@@ -160,9 +161,14 @@ export default function Layout() {
       >
         <div className="h-16 flex items-center px-6 border-b border-gray-100">
           <div className="flex items-center gap-2 text-primary font-bold text-xl tracking-tight">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
-              S
-            </div>
+            <img 
+              src={shemaLogo} 
+              alt="Shema Music" 
+              className={cn(
+                "object-contain transition-all duration-300",
+                isSidebarOpen ? "h-8 w-auto" : "h-6 w-6"
+              )} 
+            />
             {isSidebarOpen && <span className="transition-opacity duration-300">Shema Music</span>}
           </div>
         </div>

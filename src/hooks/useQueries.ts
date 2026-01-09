@@ -16,6 +16,7 @@ export const queryKeys = {
   schedules: () => [...queryKeys.all, 'schedules'] as const,
   dashboard: () => [...queryKeys.all, 'dashboard'] as const,
   availabilitySlots: () => [...queryKeys.all, 'availabilitySlots'] as const,
+  availableInstructors: () => [...queryKeys.all, 'availableInstructors'] as const,
 };
 
 /**
@@ -118,12 +119,33 @@ export function useCourses(page?: number, limit?: number) {
 
       // Handle paginated response
       if (raw && !Array.isArray(raw) && raw.courses) {
-        return { data: raw.courses, total: raw.total || 0 };
+        return { 
+          data: raw.courses, 
+          total: raw.pagination?.total || raw.total || 0 
+        };
       }
 
       // Handle array response (fallback/non-paginated)
       const list = Array.isArray(raw) ? raw : [];
       return { data: list, total: list.length };
+    },
+  });
+
+}
+
+/**
+ * Fetch public courses (for dropdowns)
+ * GET /api/courses
+ */
+export function useClientCourses() {
+  return useQuery({
+    queryKey: ['client-courses'],
+    queryFn: async () => {
+      const res = await api.get('/api/courses');
+      const raw = res.data.data;
+      // Handle potential pagination wrapper or direct array
+      const list = Array.isArray(raw) ? raw : (raw?.courses || []);
+      return list;
     },
   });
 }
@@ -278,6 +300,25 @@ export function useAvailabilitySlots(courseId?: string, instructorId?: string) {
         slots: data?.slots || [],
         meta: res.data.meta || {},
       };
+    },
+    // Fetch all slots when no filter is provided, or fetch filtered slots when filters are provided
+  });
+}
+
+/**
+ * Fetch available instructors for booking
+ * GET /api/booking/available-instructors
+ */
+export function useAvailableInstructors() {
+  return useQuery({
+    queryKey: queryKeys.availableInstructors(),
+    queryFn: async () => {
+      const res = await api.get('/api/booking/available-instructors');
+      const raw = res.data.data;
+      if (raw && !Array.isArray(raw) && raw.instructors) {
+        return raw.instructors;
+      }
+      return Array.isArray(raw) ? raw : [];
     },
   });
 }

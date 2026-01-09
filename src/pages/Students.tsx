@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
-import { useStudents, useCourses, useBookings, useUsers, useStudent, useAllSchedules, queryKeys } from '@/hooks/useQueries';
+import { useStudents, useCourses, useBookings, useUsers, useStudent, useAllSchedules, useAvailableInstructors, useAvailabilitySlots, useClientCourses, queryKeys } from '@/hooks/useQueries';
 import { uploadToStorage } from '@/lib/supabase';
 import {
   Table,
@@ -51,16 +51,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { TableSkeleton } from '@/components/TableSkeleton';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 
-const DAYS_OF_WEEK = [
-  { value: 'monday', label: 'Senin' },
-  { value: 'tuesday', label: 'Selasa' },
-  { value: 'wednesday', label: 'Rabu' },
-  { value: 'thursday', label: 'Kamis' },
-  { value: 'friday', label: 'Jumat' },
-  { value: 'saturday', label: 'Sabtu' },
-  { value: 'sunday', label: 'Minggu' },
-];
-
 const EXPERIENCE_LEVELS = [
   { value: 'beginner', label: 'Pemula' },
   { value: 'intermediate', label: 'Menengah' },
@@ -69,39 +59,29 @@ const EXPERIENCE_LEVELS = [
 
 // Schema untuk membuat student baru (POST /api/admin/students)
 const createStudentSchema = z.object({
-  // Data Dasar Siswa (Wajib)
+  // --- IDENTITAS COURSE & SLOT (MANDATORY) ---
+  course_id: z.string().uuid("Pilih kursus"),
+  instructor_id: z.string().optional(), // Helper field for UI filtering
+  confirmed_slot_id: z.string().uuid("Pilih slot pasti"),
+  
+  // --- IDENTITAS SISWA (MANDATORY) ---
   display_name: z.string().min(2, "Nama minimal 2 karakter"),
   email: z.string().email("Format email tidak valid"),
-  
-  // Pilihan Kursus & Jadwal (Wajib)
-  course_id: z.string().uuid("Pilih kursus"),
-  first_choice_slot_id: z.string().uuid("Pilih jadwal pilihan pertama"),
-  second_choice_slot_id: z.string().uuid("Pilih jadwal pilihan kedua"),
-  preferred_days: z.array(z.string()).min(1, "Pilih minimal satu hari"),
-  preferred_time_range: z.object({
-    start: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Format waktu HH:MM"),
-    end: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, "Format waktu HH:MM"),
-  }),
-  
-  // Data Wali/Orang Tua (Wajib)
-  guardian_name: z.string().min(2, "Nama wali wajib diisi"),
-  guardian_wa_number: z.string().min(10, "Nomor WhatsApp wajib diisi"),
-  
-  // Data Pribadi Siswa (Wajib)
-  applicant_address: z.string().min(5, "Alamat wajib diisi"),
-  applicant_birth_place: z.string().min(2, "Tempat lahir wajib diisi"),
-  applicant_birth_date: z.string().min(1, "Tanggal lahir wajib diisi"),
-  applicant_school: z.string().min(2, "Nama sekolah wajib diisi"),
-  applicant_class: z.string().min(1, "Kelas wajib diisi"),
-  
-  // Data Opsional
+  wa_number: z.string().min(10, "Nomor WhatsApp wajib diisi"),
+  address: z.string().min(5, "Alamat wajib diisi"),
+  birth_place: z.string().min(2, "Tempat lahir wajib diisi"),
+  birth_date: z.string().min(1, "Tanggal lahir wajib diisi"),
   experience_level: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
+  type_course: z.enum(['reguler', 'hobby', 'karyawan', 'ministry', 'privat']),
+
+  // --- DATA OPSIONAL (Recommended untuk diisi) ---
+  school: z.string().optional(),
+  class: z.string().optional(),
+  guardian_name: z.string().optional(),
+  guardian_wa_number: z.string().optional(),
+  instrument_owned: z.boolean().default(false),
   notes: z.string().optional(),
-  instrument: z.string().optional(),
-  level: z.string().optional(),
-  has_instrument: z.boolean().default(false),
   photo_url: z.string().url().optional().or(z.literal('')),
-  highlight_quote: z.string().optional(),
   can_publish: z.boolean().default(false),
 });
 
@@ -147,6 +127,7 @@ export default function StudentsPage() {
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
+  const [selectedInstructorId, setSelectedInstructorId] = useState<string>("");
   
   // Photo upload states
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -163,7 +144,14 @@ export default function StudentsPage() {
   // Existing hooks
   const { isLoading: isStudentsLoading, error: studentsError, data: studentsData } = useStudents(1, 1000);
   const { data: coursesData } = useCourses();
+  const { data: clientCoursesData } = useClientCourses();
   const { data: schedulesData } = useAllSchedules();
+  const { data: instructorsData } = useAvailableInstructors();
+  const { data: availabilitySlotsData } = useAvailabilitySlots(
+    selectedCourseId, 
+    selectedInstructorId
+  );
+  const availableSlotsRaw = availabilitySlotsData?.slots || [];
   
   // New hooks for table data
   // For Students page, we need ALL bookings to filter confirmed ones, so use high limit
@@ -332,112 +320,72 @@ export default function StudentsPage() {
     return '-';
   };
 
-  // Build slots map based on selected course
+  // Build slots map based on selected course and instructor
   const availableSlots = useMemo(() => {
-    if (!selectedCourseId || !schedulesData?.data || schedulesData.data.length === 0) {
+    if (!availableSlotsRaw || availableSlotsRaw.length === 0) {
       return [];
     }
 
-    const extractTimeInfo = (dateString: string) => {
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleTimeString('id-ID', { 
-          hour: '2-digit', 
-          minute: '2-digit', 
-          hour12: false 
-        });
-      } catch {
-        return dateString;
-      }
-    };
-
-    const extractDayOfWeek = (dateString: string) => {
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('id-ID', { weekday: 'long' });
-      } catch {
-        return 'TBD';
-      }
-    };
-
-    const courseSchedules = schedulesData?.data
-      ? schedulesData.data.filter((schedule: any) => schedule.course_id === selectedCourseId)
-      : [];
-
-    const slots: any[] = [];
-    
-    courseSchedules.forEach((schedule: any) => {
-      const nestedSlots = schedule.slots || schedule.schedule || schedule.timings;
-      let slotsToProcess: any[] = [];
+    // Filter only available slots, then map to display format
+    return availableSlotsRaw
+      .filter((slot: any) => slot.status === 'available')
+      .map((slot: any) => {
+      let label = "";
       
-      if (Array.isArray(nestedSlots)) {
-        slotsToProcess = nestedSlots;
-      } else if (schedule.start_time && schedule.end_time) {
-        slotsToProcess = [schedule];
-      }
+      const dayOfWeek = slot.day_of_week || 
+        (slot.start_time ? new Date(slot.start_time).toLocaleDateString('id-ID', { weekday: 'long' }) : 'TBD');
 
-      slotsToProcess.forEach((slot: any) => {
-        try {
-          let slotId, dayOfWeek, startTime, endTime;
-
-          if (slot.day_of_week) {
-            slotId = slot.id || `${schedule.id}-${slot.day_of_week}-${slot.start_time}`;
-            dayOfWeek = slot.day_of_week || slot.day || 'TBD';
-            startTime = slot.start_time || slot.start || '00:00';
-            endTime = slot.end_time || slot.end || '00:00';
-          } else if (slot.start_time && slot.end_time && (slot.start_time.includes('T') || slot.start_time.includes(':'))) {
-            slotId = slot.id || `${schedule.id}-${slot.start_time}-${slot.end_time}`;
-            dayOfWeek = extractDayOfWeek(slot.start_time);
-            startTime = extractTimeInfo(slot.start_time);
-            endTime = extractTimeInfo(slot.end_time);
-          } else {
-            slotId = slot.id || `${schedule.id}-slot`;
-            dayOfWeek = 'TBD';
-            startTime = slot.start_time || slot.start || '00:00';
-            endTime = slot.end_time || slot.end || '00:00';
-          }
-
-          slots.push({
-            id: slotId,
-            schedule_id: schedule.id,
-            label: `${dayOfWeek} ${startTime} - ${endTime}`,
+      // Helper to format time HH:MM
+      const formatTime = (timeStr: string) => {
+        if (!timeStr) return "00:00";
+        if (timeStr.includes('T')) {
+          return new Date(timeStr).toLocaleTimeString('id-ID', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: false 
           });
-        } catch (err) {
-          console.error('Error processing slot:', slot, err);
         }
-      });
-    });
+        // Handle HH:MM:SS or HH:MM
+        const parts = timeStr.split(':');
+        return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : timeStr;
+      };
 
-    return slots;
-  }, [selectedCourseId, schedulesData]);
+      const start = formatTime(slot.start_time || slot.time || slot.start_time_of_day);
+      const end = formatTime(slot.end_time || slot.time_end || slot.end_time_of_day);
+      
+      label = `${dayOfWeek} ${start} - ${end}`;
+      if (slot.instructor && slot.instructor.name) {
+         label += ` (${slot.instructor.name})`;
+      }
+      
+      return {
+        id: slot.id || slot.schedule_id,
+        label: label,
+      };
+    });
+  }, [availableSlotsRaw]);
 
   const createForm = useForm<z.infer<typeof createStudentSchema>>({
     resolver: zodResolver(createStudentSchema),
     defaultValues: {
+      course_id: "",
+      instructor_id: "",
+      confirmed_slot_id: "",
       display_name: "",
       email: "",
-      course_id: "",
-      first_choice_slot_id: "",
-      second_choice_slot_id: "",
-      preferred_days: [],
-      preferred_time_range: {
-        start: "09:00",
-        end: "17:00",
-      },
+      wa_number: "",
+      address: "",
+      birth_place: "",
+      birth_date: "",
+      experience_level: "beginner",
+      type_course: undefined as any, // Will be set by user selection
+      school: "",
+      class: "",
       guardian_name: "",
       guardian_wa_number: "",
-      applicant_address: "",
-      applicant_birth_place: "",
-      applicant_birth_date: "",
-      applicant_school: "",
-      applicant_class: "",
-      experience_level: "beginner",
+      instrument_owned: false,
       notes: "",
-      instrument: "",
-      level: "",
-      has_instrument: false,
       photo_url: "",
-      highlight_quote: "",
       can_publish: false,
     },
   });
@@ -500,16 +448,43 @@ export default function StudentsPage() {
     }
   }, [selectedStudent, editForm]);
 
-  // Watch course_id changes in create form
+  // Watch form field changes
   const watchedCourseId = createForm.watch("course_id");
+  const watchedInstructorId = createForm.watch("instructor_id");
+  const watchedTypeCourse = createForm.watch("type_course");
+
+  // Filter courses by selected type_course
+  const filteredCourses = useMemo(() => {
+    if (!clientCoursesData || !Array.isArray(clientCoursesData)) return [];
+    if (!watchedTypeCourse) return [];
+    return clientCoursesData.filter((course: any) => course.type_course === watchedTypeCourse);
+  }, [clientCoursesData, watchedTypeCourse]);
+
+  // Reset course_id when type_course changes
+  useEffect(() => {
+    if (watchedTypeCourse) {
+      createForm.setValue("course_id", "");
+      setSelectedCourseId("");
+    }
+  }, [watchedTypeCourse]);
+
   useEffect(() => {
     if (watchedCourseId) {
       setSelectedCourseId(watchedCourseId);
-      // Reset slot selections when course changes
-      createForm.setValue("first_choice_slot_id", "");
-      createForm.setValue("second_choice_slot_id", "");
+      // Reset dependent fields
+      createForm.setValue("confirmed_slot_id", "");
     }
   }, [watchedCourseId, createForm]);
+
+  useEffect(() => {
+    if (watchedInstructorId) {
+      setSelectedInstructorId(watchedInstructorId);
+      // Reset confirmed_slot_id when instructor changes
+      createForm.setValue("confirmed_slot_id", "");
+    } else {
+      setSelectedInstructorId("");
+    }
+  }, [watchedInstructorId, createForm]);
 
   const createMutation = useMutation({
     mutationFn: (newStudent: z.infer<typeof createStudentSchema>) => {
@@ -580,7 +555,9 @@ export default function StudentsPage() {
   });
 
   function onCreateSubmit(values: z.infer<typeof createStudentSchema>) {
-    createMutation.mutate(values);
+    // Exclude instructor_id from the payload
+    const { instructor_id, ...payload } = values;
+    createMutation.mutate(payload as any);
   }
 
   function onEditSubmit(values: z.infer<typeof updateStudentSchema>) {
@@ -750,183 +727,19 @@ export default function StudentsPage() {
                       )}
                     />
                   </div>
-                </div>
-
-                {/* Section 2: Pilihan Kursus & Jadwal */}
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg border-b pb-2">Pilihan Kursus & Jadwal</h3>
                   <FormField
                     control={createForm.control}
-                    name="course_id"
+                    name="wa_number"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Kursus *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pilih kursus" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {Array.isArray(coursesData) && coursesData.map((course: any) => (
-                              <SelectItem key={course.id} value={course.id}>
-                                {course.title || course.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>No. WhatsApp Siswa *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="08123456789" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={createForm.control}
-                      name="first_choice_slot_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Pilihan Jadwal 1 *</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCourseId}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={selectedCourseId ? "Pilih jadwal" : "Pilih kursus dulu"} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {availableSlots.map((slot: any) => (
-                                <SelectItem key={slot.id} value={slot.id}>
-                                  {slot.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={createForm.control}
-                      name="second_choice_slot_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Pilihan Jadwal 2 *</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCourseId}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={selectedCourseId ? "Pilih jadwal" : "Pilih kursus dulu"} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {availableSlots.map((slot: any) => (
-                                <SelectItem key={slot.id} value={slot.id}>
-                                  {slot.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <FormField
-                    control={createForm.control}
-                    name="preferred_days"
-                    render={() => (
-                      <FormItem>
-                        <FormLabel>Hari yang Diinginkan *</FormLabel>
-                        <div className="grid grid-cols-4 gap-2">
-                          {DAYS_OF_WEEK.map((day) => (
-                            <FormField
-                              key={day.value}
-                              control={createForm.control}
-                              name="preferred_days"
-                              render={({ field }) => (
-                                <FormItem className="flex items-center space-x-2 space-y-0">
-                                  <FormControl>
-                                    <Checkbox
-                                      checked={field.value?.includes(day.value)}
-                                      onCheckedChange={(checked) => {
-                                        const current = field.value || [];
-                                        if (checked) {
-                                          field.onChange([...current, day.value]);
-                                        } else {
-                                          field.onChange(current.filter((v: string) => v !== day.value));
-                                        }
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <Label className="text-sm font-normal">{day.label}</Label>
-                                </FormItem>
-                              )}
-                            />
-                          ))}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={createForm.control}
-                      name="preferred_time_range.start"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Waktu Mulai *</FormLabel>
-                          <FormControl>
-                            <Input type="time" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={createForm.control}
-                      name="preferred_time_range.end"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Waktu Selesai *</FormLabel>
-                          <FormControl>
-                            <Input type="time" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-
-                {/* Section 3: Data Wali/Orang Tua */}
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg border-b pb-2">Data Wali/Orang Tua</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={createForm.control}
-                      name="guardian_name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nama Wali *</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Nama orang tua/wali" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={createForm.control}
-                      name="guardian_wa_number"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>No. WhatsApp Wali *</FormLabel>
-                          <FormControl>
-                            <Input placeholder="08123456789" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
                 </div>
 
                 {/* Section 4: Data Pribadi Siswa */}
@@ -934,7 +747,7 @@ export default function StudentsPage() {
                   <h3 className="font-semibold text-lg border-b pb-2">Data Pribadi Siswa</h3>
                   <FormField
                     control={createForm.control}
-                    name="applicant_address"
+                    name="address"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Alamat *</FormLabel>
@@ -948,7 +761,7 @@ export default function StudentsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={createForm.control}
-                      name="applicant_birth_place"
+                      name="birth_place"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Tempat Lahir *</FormLabel>
@@ -961,7 +774,7 @@ export default function StudentsPage() {
                     />
                     <FormField
                       control={createForm.control}
-                      name="applicant_birth_date"
+                      name="birth_date"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Tanggal Lahir *</FormLabel>
@@ -976,10 +789,10 @@ export default function StudentsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={createForm.control}
-                      name="applicant_school"
+                      name="school"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nama Sekolah *</FormLabel>
+                          <FormLabel>Nama Sekolah</FormLabel>
                           <FormControl>
                             <Input placeholder="SMA Negeri 1" {...field} />
                           </FormControl>
@@ -989,10 +802,10 @@ export default function StudentsPage() {
                     />
                     <FormField
                       control={createForm.control}
-                      name="applicant_class"
+                      name="class"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Kelas *</FormLabel>
+                          <FormLabel>Kelas</FormLabel>
                           <FormControl>
                             <Input placeholder="X IPA 1" {...field} />
                           </FormControl>
@@ -1003,28 +816,62 @@ export default function StudentsPage() {
                   </div>
                 </div>
 
-                {/* Section 5: Data Opsional */}
+
+                {/* Section 3: Data Wali/Orang Tua */}
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-lg border-b pb-2">Data Tambahan (Opsional)</h3>
+                  <h3 className="font-semibold text-lg border-b pb-2">Data Wali/Orang Tua (Opsional)</h3>
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={createForm.control}
-                      name="experience_level"
+                      name="guardian_name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Level Pengalaman</FormLabel>
+                          <FormLabel>Nama Wali</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Nama orang tua/wali" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="guardian_wa_number"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>No. WhatsApp Wali</FormLabel>
+                          <FormControl>
+                            <Input placeholder="08123456789" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {/* Section 2: Pilihan Kursus & Jadwal */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg border-b pb-2">Pilihan Kursus & Jadwal</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={createForm.control}
+                      name="type_course"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tipe Kursus *</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Pilih level" />
+                                <SelectValue placeholder="Pilih tipe kursus" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {EXPERIENCE_LEVELS.map((level) => (
-                                <SelectItem key={level.value} value={level.value}>
-                                  {level.label}
-                                </SelectItem>
-                              ))}
+                              <SelectItem value="privat">Privat</SelectItem>
+                              <SelectItem value="reguler">Reguler</SelectItem>
+                              <SelectItem value="hobby">Hobby</SelectItem>
+                              <SelectItem value="karyawan">Karyawan</SelectItem>
+                              <SelectItem value="ministry">Ministry</SelectItem>
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -1033,18 +880,115 @@ export default function StudentsPage() {
                     />
                     <FormField
                       control={createForm.control}
-                      name="instrument"
+                      name="course_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Instrumen</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Piano, Gitar, dll" {...field} />
-                          </FormControl>
+                          <FormLabel>Kursus *</FormLabel>
+                          <Select 
+                            onValueChange={field.onChange} 
+                            value={field.value}
+                            disabled={!watchedTypeCourse}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={watchedTypeCourse ? "Pilih kursus" : "Pilih tipe kursus dulu"} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {filteredCourses.map((course: any) => (
+                                <SelectItem key={course.id} value={course.id}>
+                                  {course.title || course.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={createForm.control}
+                    name="instructor_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Instruktur</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Semua Instruktur" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {Array.isArray(instructorsData) && instructorsData.map((instructor: any) => (
+                              <SelectItem key={instructor.id} value={instructor.id}>
+                                {instructor.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={createForm.control}
+                    name="confirmed_slot_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Jadwal Kursus*</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={!selectedCourseId}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={selectedCourseId ? "Pilih jadwal kursus" : "Pilih kursus dulu"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {availableSlots.map((slot: any) => (
+                              <SelectItem key={slot.id} value={slot.id}>
+                                {slot.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+
+
+
+                {/* Section 5: Data Opsional */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg border-b pb-2">Data Tambahan (Opsional)</h3>
+                  <FormField
+                    control={createForm.control}
+                    name="experience_level"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Level Pengalaman</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Pilih level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {EXPERIENCE_LEVELS.map((level) => (
+                              <SelectItem key={level.value} value={level.value}>
+                                {level.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={createForm.control}
                     name="notes"
@@ -1127,39 +1071,6 @@ export default function StudentsPage() {
                       </FormItem>
                     )}
                   />
-
-                  <div className="flex gap-6">
-                    <FormField
-                      control={createForm.control}
-                      name="has_instrument"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <Label className="text-sm font-normal">Memiliki instrumen sendiri</Label>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={createForm.control}
-                      name="can_publish"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <Label className="text-sm font-normal">Boleh dipublikasikan</Label>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
                 </div>
 
                 <DialogFooter>

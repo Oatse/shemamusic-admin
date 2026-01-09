@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/services/api";
+import { queryKeys } from "@/hooks/useQueries";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,6 +42,7 @@ const courseSchema = z.object({
   duration_minutes: z.coerce.number().min(1),
   max_students: z.coerce.number().min(1),
   instrument: z.string().min(1, "Instrument is required"),
+  type_course: z.enum(["reguler", "hobby", "karyawan", "ministry", "privat"]),
 });
 
 type CourseFormValues = z.infer<typeof courseSchema>;
@@ -57,9 +59,10 @@ export function CreateCourseDialog() {
       description: "",
       level: "beginner",
       price_per_session: 0,
-      duration_minutes: 90,
+      duration_minutes: 60,
       max_students: 1,
       instrument: "",
+      type_course: "privat",
     },
   });
 
@@ -73,7 +76,7 @@ export function CreateCourseDialog() {
         title: "Success",
         description: "Course created successfully",
       });
-      queryClient.invalidateQueries({ queryKey: ["courses"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses() });
       setOpen(false);
       form.reset();
     },
@@ -213,6 +216,31 @@ export function CreateCourseDialog() {
                   <FormControl>
                     <Input placeholder="Piano" {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="type_course"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Course Type</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select course type" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="reguler">Reguler</SelectItem>
+                      <SelectItem value="hobby">Hobby</SelectItem>
+                      <SelectItem value="karyawan">Karyawan</SelectItem>
+                      <SelectItem value="ministry">Ministry</SelectItem>
+                      <SelectItem value="privat">Privat</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
